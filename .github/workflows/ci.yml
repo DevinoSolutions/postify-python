@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Ruff (lint)
+        run: python -m pip install --upgrade pip && pip install ruff==0.16.0 && ruff check .
+      - name: Ruff (format check)
+        run: ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: ty (type check)
+        run: |
+          python -m pip install --upgrade pip
+          pip install ty==0.0.63 "httpx>=0.27,<1" "pydantic>=2.7,<3"
+          ty check
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the dev-toolchain floor (pytest 9 / pytest-asyncio 1.x).
+        # The library supports 3.9 — proven by `build-and-import` below.
+        python-version: ["3.10", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dev dependencies
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Run unit tests
+        run: pytest tests/unit -ra --cov=postify --cov-report=term-missing --cov-fail-under=85
+
+  spec-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dev dependencies
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Every /v1 operation has an SDK method
+        run: python -m pytest tests/unit/test_openapi_parity.py -v
+
+  build-and-import:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - name: Install wheel and smoke-test import
+        run: |
+          pip install dist/*.whl
+          python -c "
+          import postify
+          from postify import Postify, AsyncPostify, verify_webhook, redact_api_key
+          assert postify.__version__ == '0.1.0', postify.__version__
+          client = Postify(api_key='postify_live_abcdefgh1234')
+          assert 'postify_live_' in repr(client)
+          assert 'abcdefgh1234' not in repr(client)
+          assert redact_api_key('postify_live_abcdefgh1234').endswith('1234')
+          import hmac, hashlib, base64, json, time
+          secret = 'whsec_' + base64.b64encode(b'x' * 24).decode()
+          body = json.dumps({'id': 'evt_1', 'type': 'webhook.test', 'createdAt': '2026-08-05T00:00:00.000Z', 'data': {}}).encode()
+          ts = str(int(time.time()))
+          sig = base64.b64encode(hmac.new(base64.b64decode(secret[6:]), b'evt_1.' + ts.encode() + b'.' + body, hashlib.sha256).digest()).decode()
+          event = verify_webhook(payload=body, headers={'webhook-id': 'evt_1', 'webhook-timestamp': ts, 'webhook-signature': 'v1,' + sig}, secret=secret)
+          assert event.id == 'evt_1'
+          print('smoke ok')
+          "
