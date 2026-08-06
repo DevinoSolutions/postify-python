@@ -1,4 +1,4 @@
-# postify
+# postify-sdk
 
 Official Python SDK for the [Postify](https://usepostify.com) API — schedule and publish
 social posts, manage media, read analytics, and consume webhooks from Python.
@@ -13,10 +13,13 @@ social posts, manage media, read analytics, and consume webhooks from Python.
 - Runtime dependencies: `httpx` and `pydantic`. That's it.
 
 ```bash
-pip install postify
+pip install postify-sdk
 ```
 
 Requires Python 3.9+.
+
+> The distribution is published as **`postify-sdk`**, but the import package is
+> **`postify`** — `pip install postify-sdk`, then `from postify import Postify`.
 
 ## 60-second quickstart
 

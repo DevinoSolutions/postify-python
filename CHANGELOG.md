@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The PyPI distribution name is now `postify-sdk` (was `postify`), matching the
+  fleet-wide `<app>-sdk` convention. The import package is unchanged: `postify`.
+
 ## [0.1.0] - 2026-08-05
 
 Initial release. Full coverage of the Postify `/v1` public API — all 17

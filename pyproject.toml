@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "postify"
+name = "postify-sdk"
 dynamic = ["version"]
 description = "Official Python SDK for the Postify social publishing API."
 readme = "README.md"

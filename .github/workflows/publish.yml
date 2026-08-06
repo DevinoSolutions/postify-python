@@ -1,7 +1,7 @@
 # This workflow uses PyPI Trusted Publishing (OIDC) — no API token/password. It will
-# FAIL until a trusted publisher for the `postify` project is registered on PyPI:
+# FAIL until a trusted publisher for the `postify-sdk` project is registered on PyPI:
 #   PyPI -> Publishing -> add a pending GitHub publisher:
-#   PyPI Project Name: postify, owner: DevinoSolutions, repo: postify-python,
+#   PyPI Project Name: postify-sdk, owner: DevinoSolutions, repo: postify-python,
 #   workflow: publish.yml, environment: pypi
 # Do NOT dispatch this workflow before that is done.
 name: Publish
