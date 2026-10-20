@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mastodon`, `telegram` and `discord` in `PLATFORMS` and the `Platform` type,
+  matching the `/v1` spec's `Channel.platform` enum.
+
 ### Changed
 
 - The PyPI distribution name is now `postify-sdk` (was `postify`), matching the
