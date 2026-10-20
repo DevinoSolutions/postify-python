@@ -83,6 +83,9 @@ PLATFORMS = (
     "youtube",
     "bluesky",
     "reddit",
+    "mastodon",
+    "telegram",
+    "discord",
 )
 Platform = Union[
     Literal[
@@ -96,6 +99,9 @@ Platform = Union[
         "youtube",
         "bluesky",
         "reddit",
+        "mastodon",
+        "telegram",
+        "discord",
     ],
     str,
 ]

@@ -147,7 +147,7 @@ def test_an_unknown_platform_or_status_does_not_raise() -> None:
     channel = models.Channel.model_validate(
         {
             "id": "chn_1",
-            "platform": "mastodon",  # not in this SDK's PLATFORMS tuple
+            "platform": "friendster",  # not in this SDK's PLATFORMS tuple
             "handle": "@acme",
             "avatar_url": None,
             "followers": None,
@@ -157,7 +157,7 @@ def test_an_unknown_platform_or_status_does_not_raise() -> None:
             "created_at": "2026-08-05T12:00:00.000Z",
         }
     )
-    assert channel.platform == "mastodon"
+    assert channel.platform == "friendster"
     assert channel.status == "quarantined"
 
 

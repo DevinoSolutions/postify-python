@@ -4277,7 +4277,10 @@
               "pinterest",
               "youtube",
               "bluesky",
-              "reddit"
+              "reddit",
+              "mastodon",
+              "telegram",
+              "discord"
             ],
             "description": "Social platform this channel publishes to."
           },
@@ -4766,7 +4769,7 @@
                 "type": "null"
               }
             ],
-            "description": "Most recent delivery error, if any."
+            "description": "Why the latest delivery failed, as a sentence you can show your users. Present only when `stage` is `failed` or `dlq`; otherwise null."
           }
         },
         "required": [

@@ -18,13 +18,25 @@ url="${POSTIFY_SPEC_URL:-https://app.usepostify.com/v1/openapi.json}"
 
 if [[ -n "${POSTIFY_SPEC_SOURCE:-}" ]]; then
   echo "Vendoring spec from ${POSTIFY_SPEC_SOURCE}"
-  cp "${POSTIFY_SPEC_SOURCE}" "${dest}"
+  cp "${POSTIFY_SPEC_SOURCE}" "${dest}.tmp"
 else
   echo "Fetching spec from ${url}"
   curl -fsSL "${url}" -o "${dest}.tmp"
-  python -c "import json,sys; json.load(open(sys.argv[1]))" "${dest}.tmp"
-  mv "${dest}.tmp" "${dest}"
 fi
+
+# Production serves the spec minified. Re-serialise it the way spec/v1.json is
+# committed (2-space indent, UTF-8, trailing newline) so a drift PR shows only
+# the real change instead of rewriting all 5,000+ lines onto one.
+python - "${dest}.tmp" "${dest}" <<'PY'
+import json, sys
+
+with open(sys.argv[1], encoding="utf-8") as src:
+    doc = json.load(src)
+with open(sys.argv[2], "w", encoding="utf-8", newline="\n") as out:
+    json.dump(doc, out, indent=2, ensure_ascii=False)
+    out.write("\n")
+PY
+rm -f "${dest}.tmp"
 
 ops=$(python - "$dest" <<'PY'
 import json, sys
