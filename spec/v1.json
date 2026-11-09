@@ -594,7 +594,7 @@
       "post": {
         "operationId": "createMediaUpload",
         "summary": "Start a media upload",
-        "description": "Issues a presigned upload ticket: PUT the raw file bytes to `upload_url` with the same `Content-Type`, then call POST /v1/media/uploads/{id}/complete. The asset kind (image/video/audio) is inferred from `content_type`.",
+        "description": "Issues a presigned upload ticket: PUT the raw file bytes to `upload_url`, then call POST /v1/media/uploads/{id}/complete. Send `size_bytes` (strongly recommended, and it will be required in a future major version): it is checked against your plan's per-file limit and signed into the URL, so the PUT must send exactly that many bytes; without it the response carries a `Deprecation` header (an RFC 9745 date) and a `Link` with `rel=\"deprecation\"`, the upload URL lives 5 minutes instead of 15, and the plan limit is enforced when the upload is completed, which measures the object. That path cannot stop a body PUT after you complete, or an upload you never complete, so send `size_bytes`. The PUT must also send the same `Content-Type` you declared here: the URL is signed for that value, and storage answers 403 to a PUT with a different one or none. Only image, video and audio types are accepted (SVG is refused), plus PDF, PPT, PPTX, DOC and DOCX documents (judged by the filename extension; other Office types such as XLSX are refused); the asset kind (image/video/audio/raw) is inferred from `content_type`. A type that is refused, or a size over your plan's per-file limit, answers 400 `validation_failed` with the offending field in `errors`. Call /complete within 24 hours: an upload that is not completed in that time is swept, and /complete then returns 404.",
         "tags": [
           "Media"
         ],
@@ -669,6 +669,22 @@
                 "schema": {
                   "description": "Unix epoch seconds when the burst window resets.",
                   "example": "1800000038",
+                  "type": "string"
+                }
+              },
+              "Deprecation": {
+                "description": "Present only when the request omitted `size_bytes`: an RFC 9745 date (a Structured Fields Date) from which that omission is deprecated.",
+                "schema": {
+                  "description": "Present only when the request omitted `size_bytes`: an RFC 9745 date (a Structured Fields Date) from which that omission is deprecated.",
+                  "example": "@1792627200",
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Present only when the request omitted `size_bytes`: points at the documentation with `rel=\"deprecation\"`.",
+                "schema": {
+                  "description": "Present only when the request omitted `size_bytes`: points at the documentation with `rel=\"deprecation\"`.",
+                  "example": "<https://usepostify.com/docs/api#uploading-media>; rel=\"deprecation\"; title=\"size_bytes will be required in a future major version\"",
                   "type": "string"
                 }
               }
@@ -793,7 +809,7 @@
       "post": {
         "operationId": "completeMediaUpload",
         "summary": "Complete a media upload",
-        "description": "Finalizes an uploaded asset after the PUT succeeds: probes the object, extracts a poster frame for videos, and marks it `ready`. Safe to retry — finalizing an already-ready asset is a no-op.",
+        "description": "Finalizes an uploaded asset after the PUT succeeds: checks the stored object's size and type against your plan and the type you declared, probes it, extracts a poster frame for videos, and marks it `ready`. An image is `ready` in the response. A video or audio file is probed after the response, which can take a few minutes: the response then carries the asset with `status` `pending`, and it turns `ready`, or `failed` with a `failure_reason`, on its own. Poll by calling this endpoint again (it is idempotent and returns the current asset) or with GET /v1/media, and attach the asset to a post only once it is `ready`: scheduling or publishing a post that holds a `failed` or still-processing file answers `validation_failed`, so completing a video and scheduling it at once can be refused until processing ends. A file over your plan's limit, or stored as a different type than you declared, is refused in the response itself (`validation_failed`) and the asset is `failed`. If the file is not in storage yet, answers 409 `resource_conflict` and leaves the asset `pending`: PUT it to `upload_url`, then complete again. Safe to retry — completing an asset that is already ready or failed returns it as it is, and one still processing returns it `pending` (a process restart during processing can restart the job, so do not rely on a retry to run it only once). A ready asset serves the bytes that were checked: a body PUT to `upload_url` after completion does not change it. Returns 404 if the upload was never completed within 24 hours and has been swept.",
         "tags": [
           "Media"
         ],
@@ -823,7 +839,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The finalized asset.",
+            "description": "The asset: `ready` for an image, `pending` for a video or audio file still being probed, or `failed`.",
             "headers": {
               "Request-Id": {
                 "required": true,
@@ -1264,7 +1280,7 @@
       "post": {
         "operationId": "createPost",
         "summary": "Create a post",
-        "description": "Creates a post with one variant per target channel. Exactly one mode is required: `draft: true` (save only), `scheduled_at` (future publish), or `publish_now: true` (immediate — requires the workspace's dangerous-operations toggle for API callers). Send an `Idempotency-Key` header to make retries safe.",
+        "description": "Creates a post with one variant per target channel. Exactly one mode is required: `draft: true` (save only), `scheduled_at` (future publish; a time less than 60 seconds ahead is sent by the next publish sweep, so it also requires the `posts:publish` scope), or `publish_now: true` (immediate — also requires the `posts:publish` scope). Send an `Idempotency-Key` header to make retries safe.",
         "tags": [
           "Posts"
         ],
@@ -1414,7 +1430,7 @@
             }
           },
           "403": {
-            "description": "`insufficient_scope` — API credential lacks the required scope; `feature_not_enabled` — Feature not available on the current plan; `dangerous_ops_disabled` — Dangerous AI operations are disabled for this workspace. RFC 9457 problem body; `code` is the machine-readable discriminant.",
+            "description": "`insufficient_scope` — API credential lacks the required scope; `feature_not_enabled` — Feature not available on the current plan. RFC 9457 problem body; `code` is the machine-readable discriminant.",
             "headers": {
               "Request-Id": {
                 "required": true,
@@ -1746,7 +1762,7 @@
       "patch": {
         "operationId": "reschedulePost",
         "summary": "Reschedule a post",
-        "description": "Moves a draft, scheduled, or failed post to a new future publish time (drafts must already have variants). Published, publishing, and approval-pending posts cannot be rescheduled (409 `resource_conflict`).",
+        "description": "Moves a draft, scheduled, or failed post to a new future publish time (drafts must already have variants). A time less than 60 seconds ahead is sent by the next publish sweep, so it also requires the `posts:publish` scope (403 `insufficient_scope` otherwise). Published, publishing, and approval-pending posts cannot be rescheduled (409 `resource_conflict`).",
         "tags": [
           "Posts"
         ],
@@ -1998,7 +2014,7 @@
       "delete": {
         "operationId": "deletePost",
         "summary": "Delete a post",
-        "description": "Deletes a post (it disappears from Postify; already-published platform content is not retracted). A post that is currently publishing cannot be deleted (409). Requires the workspace's dangerous-operations toggle.",
+        "description": "Deletes a post (it disappears from Postify; already-published platform content is not retracted). A post that is currently publishing cannot be deleted (409). Requires the `posts:delete` scope.",
         "tags": [
           "Posts"
         ],
@@ -2011,7 +2027,7 @@
           }
         ],
         "x-scopes": [
-          "posts:write"
+          "posts:delete"
         ],
         "parameters": [
           {
@@ -2131,7 +2147,7 @@
             }
           },
           "403": {
-            "description": "`insufficient_scope` — API credential lacks the required scope; `feature_not_enabled` — Feature not available on the current plan; `dangerous_ops_disabled` — Dangerous AI operations are disabled for this workspace. RFC 9457 problem body; `code` is the machine-readable discriminant.",
+            "description": "`insufficient_scope` — API credential lacks the required scope; `feature_not_enabled` — Feature not available on the current plan. RFC 9457 problem body; `code` is the machine-readable discriminant.",
             "headers": {
               "Request-Id": {
                 "required": true,
@@ -2242,7 +2258,7 @@
       "post": {
         "operationId": "publishPost",
         "summary": "Publish a post now",
-        "description": "Queues an immediate publish of a draft, scheduled, or failed post (202 — delivery continues in the background; poll GET /v1/posts/{id} for per-channel outcomes). Already-published posts return 409; a post already publishing is accepted as-is. Requires the workspace's dangerous-operations toggle.",
+        "description": "Queues an immediate publish of a draft, scheduled, or failed post (202 — delivery continues in the background; poll GET /v1/posts/{id} for per-channel outcomes). Already-published posts return 409; a post already publishing is accepted as-is. Requires the `posts:publish` scope.",
         "tags": [
           "Posts"
         ],
@@ -2255,7 +2271,7 @@
           }
         ],
         "x-scopes": [
-          "posts:write"
+          "posts:publish"
         ],
         "parameters": [
           {
@@ -2375,7 +2391,7 @@
             }
           },
           "403": {
-            "description": "`insufficient_scope` — API credential lacks the required scope; `feature_not_enabled` — Feature not available on the current plan; `dangerous_ops_disabled` — Dangerous AI operations are disabled for this workspace. RFC 9457 problem body; `code` is the machine-readable discriminant.",
+            "description": "`insufficient_scope` — API credential lacks the required scope; `feature_not_enabled` — Feature not available on the current plan. RFC 9457 problem body; `code` is the machine-readable discriminant.",
             "headers": {
               "Request-Id": {
                 "required": true,
@@ -3793,11 +3809,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 128,
-            "description": "MIME type of the bytes you will upload.",
+            "description": "MIME type of the bytes you will upload. Must be an image, video or audio type (`image/svg+xml` is refused); a PDF, PPT, PPTX, DOC or DOCX document is accepted when `filename` has that extension (XLSX and other Office types are refused). Any other type is rejected with 400. The signed upload URL only accepts a PUT that sends exactly this value as its `Content-Type`.",
             "example": "video/mp4"
           },
           "size_bytes": {
-            "description": "Size in bytes, if known.",
+            "description": "Exact size of the file in bytes. Strongly recommended, and it will be required in a future major version of the API. When sent it is checked against your plan's per-file limit and signed into the upload URL, so the PUT is refused unless its body is exactly this many bytes. When omitted the upload URL is not length-bound and lives 5 minutes instead of 15; the plan limit is then enforced when the upload is completed, which measures the object and rejects one over your plan's limit, but that cannot stop a body PUT after you complete, or an upload you never complete. A request without it is answered with a `Deprecation` header (an RFC 9745 date) and a `Link` with `rel=\"deprecation\"`.",
+            "example": 4718592,
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 2147483647
@@ -3835,6 +3852,29 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/PostMediaItem"
+                  }
+                },
+                "instagram_trial_reel": {
+                  "description": "Instagram only: publish this video as a trial reel, shown to non-followers first. `manual` keeps it a trial until you share it to your followers from the Instagram app; `auto` lets Instagram share it if it performs well; `off` (the default) publishes a normal reel. Only valid on an Instagram channel. A draft may hold it before its video is attached; scheduling or publishing refuses anything that is not exactly one video (no image, carousel or second file) with 400 `validation_failed`. A non-Instagram channel or an unknown value is refused the same way, never ignored.",
+                  "type": "string",
+                  "enum": [
+                    "off",
+                    "manual",
+                    "auto"
+                  ]
+                },
+                "settings": {
+                  "description": "Per-network post settings for this channel, as a flat object of setting name to value. Every name and value is checked against the channel's network: an unknown name, a name that belongs to another network, or a value outside the allowed set is refused with 400 `validation_failed` naming the setting, never ignored. TikTok forbids a default audience, so a scheduled or published TikTok post is refused unless `tiktokPrivacy` is set (PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, FOLLOWER_OF_CREATOR or SELF_ONLY, and only the ones the account offers): ask the person who should see it and get their explicit yes first. On YouTube, `ytPrivacy` is public, unlisted or private, and leaving it out publishes Public. A draft may be saved without them. Accepted settings by network: x: replyControl (everyone | following | mentioned), pollOptions (text), pollDurationMin (5 | 30 | 60 | 360 | 1440 | 4320 | 10080), firstComment (text); linkedin: audience (anyone | connections), liLinkPreview (true | false), liDocumentAssetId (text), liDocumentTitle (text), firstComment (text); facebook: fbStory (true | false), fbReels (true | false), firstComment (text); instagram_graph: igStory (true | false), shareToFeed (true | false), igCollaborators (text), igTrialReel (off | manual | auto), firstComment (text); instagram_standalone: igStory (true | false), shareToFeed (true | false), igCollaborators (text), igTrialReel (off | manual | auto), firstComment (text); threads: topicTag (text), threadsReply (everyone | accounts_you_follow | mentioned_only), firstComment (text); tiktok: tiktokPrivacy (PUBLIC_TO_EVERYONE | MUTUAL_FOLLOW_FRIENDS | FOLLOWER_OF_CREATOR | SELF_ONLY), tiktokAllowComment (true | false), tiktokAllowDuet (true | false), tiktokAllowStitch (true | false), tiktokCommercialDisclosure (true | false), tiktokBrandOrganic (true | false), tiktokBrandContent (true | false), tiktokIsAigc (true | false); youtube: ytTitle (text), ytPrivacy (public | unlisted | private), ytTags (text), ytShort (true | false), ytMadeForKids (true | false), ytContainsSyntheticMedia (true | false), ytThumbnail (text); bluesky: firstComment (text); reddit: subreddit (text), redditFlairId (text), redditFlairText (text), firstComment (text); mastodon: mastodonVisibility (public | unlisted | private | direct), mastodonSpoilerText (text), mastodonSensitive (true | false), firstComment (text); telegram: tgDisablePreview (true | false), tgSilent (true | false); discord: dcSuppressEmbeds (true | false), dcSilent (true | false).",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
                   }
                 }
               },
@@ -3875,7 +3915,7 @@
             "type": "boolean"
           },
           "scheduled_at": {
-            "description": "Future publish time (ISO-8601). Mutually exclusive with `draft` and `publish_now`.",
+            "description": "Future publish time (ISO-8601). A time less than 60 seconds ahead also requires the `posts:publish` scope. Mutually exclusive with `draft` and `publish_now`.",
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
@@ -3932,7 +3972,40 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-            "description": "The new future publish time (ISO-8601)."
+            "description": "The new future publish time (ISO-8601). A time less than 60 seconds ahead also requires the `posts:publish` scope."
+          },
+          "variants": {
+            "description": "Change per-network settings on the post's existing variants in the same call as the new time, for example the `tiktokPrivacy` a TikTok draft was saved without. The settings are applied only if the post can then be scheduled.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "channel_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "A channel this post already has a variant for."
+                },
+                "settings": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
+                  },
+                  "description": "Settings to change on that variant, with the same names and values as `settings` on create. Each one replaces the stored value; settings you leave out are untouched. An unknown name or a bad value is refused with 400 `validation_failed` and nothing changes."
+                }
+              },
+              "required": [
+                "channel_id",
+                "settings"
+              ]
+            }
           }
         },
         "required": [
@@ -4289,15 +4362,11 @@
             "description": "Account handle or display name, e.g. \"@postifyhq\"."
           },
           "avatar_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Profile image URL, if the platform provides one."
+            "description": "Profile image URL, if the platform provides one.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "followers": {
             "anyOf": [
@@ -4336,15 +4405,11 @@
             "description": "When channel metadata was last refreshed (ISO-8601 UTC)."
           },
           "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Most recent connection error, if any."
+            "description": "Most recent connection error, if any.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "created_at": {
             "type": "string",
@@ -4381,15 +4446,11 @@
             "description": "True when another page exists after `next_cursor`."
           },
           "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Opaque cursor for the next page — pass as `after`. Reusing a cursor with a different query is rejected."
+            "description": "Opaque cursor for the next page — pass as `after`. Reusing a cursor with a different query is rejected.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4432,18 +4493,21 @@
               "ready",
               "failed"
             ],
-            "description": "`pending` until the upload is completed; only `ready` assets should be attached to posts."
+            "description": "`pending` until the upload is completed and, for a video or audio file, until its processing finishes; only `ready` assets should be attached to posts. `failed` carries a `failure_reason`."
           },
           "url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Durable URL for the asset — use this as `media[].url` when creating posts. Null until the upload completes."
+            "description": "Durable URL for the asset — use this as `media[].url` when creating posts. Null until the upload completes.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_reason": {
+            "description": "Why the asset is `failed`, written for the person who uploaded it (a file over your plan's limit, no video track, or a processing job a restart cut short); null otherwise.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "size_bytes": {
             "anyOf": [
@@ -4485,15 +4549,11 @@
             "description": "Pixel height, when known."
           },
           "duration_sec": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Duration in seconds for audio/video, when known."
+            "description": "Duration in seconds for audio/video, when known.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "created_at": {
             "type": "string",
@@ -4509,6 +4569,7 @@
           "kind",
           "status",
           "url",
+          "failure_reason",
           "size_bytes",
           "width",
           "height",
@@ -4564,15 +4625,11 @@
             "description": "True when another page exists after `next_cursor`."
           },
           "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Opaque cursor for the next page — pass as `after`. Reusing a cursor with a different query is rejected."
+            "description": "Opaque cursor for the next page — pass as `after`. Reusing a cursor with a different query is rejected.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4614,26 +4671,18 @@
             "description": "Post format."
           },
           "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Internal title (not published to platforms)."
+            "description": "Internal title (not published to platforms).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "body": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Channel-agnostic base text the variants derive from."
+            "description": "Channel-agnostic base text the variants derive from.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "scheduled_at": {
             "anyOf": [
@@ -4718,6 +4767,28 @@
               "$ref": "#/components/schemas/PostMediaItemOutput"
             },
             "description": "Media attached to this variant."
+          },
+          "instagram_trial_reel": {
+            "description": "Present only when this Instagram variant publishes as a trial reel: `manual` or `auto` (see the create request).",
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto"
+            ]
+          },
+          "settings": {
+            "description": "The per-network settings stored on this variant (the same names and values as `settings` on create), present only when it has any.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
           }
         },
         "required": [
@@ -4750,26 +4821,18 @@
             "description": "Latest delivery stage. `indexed`/`acked` are success; `failed`/`dlq` are terminal failures; anything else is in flight."
           },
           "external_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The platform's id for the published item, once known."
+            "description": "The platform's id for the published item, once known.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Why the latest delivery failed, as a sentence you can show your users. Present only when `stage` is `failed` or `dlq`; otherwise null."
+            "description": "Why the latest delivery failed, as a sentence you can show your users. Present only when `stage` is `failed` or `dlq`; otherwise null.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5132,15 +5195,11 @@
             "description": "HTTP status returned by the endpoint, or null when the request never completed (timeout, TLS failure, blocked egress)."
           },
           "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Transport-level failure detail when no HTTP response exists."
+            "description": "Transport-level failure detail when no HTTP response exists.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
